@@ -1,19 +1,19 @@
 #!/usr/bin/env groovy
 
-library identifier: 'jenkins-shared-library@master', retriever: modernSCM(
+library identifier: 'jenkins-shared-library@main', retriever: modernSCM(
   [$class: 'GitSCMSource',
-  remote: 'https://gitlab.com/twn-devops-bootcamp/latest/12-terraform/jenkins-shared-library.git',
+  remote: 'https://git.lancom.gr/devops-courses/jenkins-shared-library.git',
   credentialsId: 'gitlab-credentials'
   ]
 )
 
-pipeline {   
+pipeline {
   agent any
   tools {
     maven 'Maven'
   }
   environment {
-    IMAGE_NAME = 'nanatwn/demo-app:java-maven-2.0'
+    IMAGE_NAME = 'tilemachos97/demo-app:java-maven-2.0'
   }
   stages {
     stage("build app") {
@@ -25,6 +25,11 @@ pipeline {
       }
     }
     stage("build image") {
+      environment {
+        AWS_ACCESS_KEY_ID = credentials('jenkins_aws_access_key_id')
+        AWS_SECRET_ACCESS_KEY = credentials('jenkins_aws_secret_access_key')
+        TF_VAR_env_prefix = 'test'
+      }
       steps {
         script {
           echo 'building docker image...'
@@ -34,21 +39,41 @@ pipeline {
         }
       }
     }
-    stage("deploy") {
+    stage("provision server") {
       steps {
         script {
+          dir('terrafirn') {
+            sh "terraform init"
+            sh "terraform apply --auto-approve"
+            EC2_PUBLIC_IP = sh(
+              script: "terraform output ec2_public_ip",
+              returnStdout: true
+            ).trim()
+          }
+        }
+      }
+    }
+    stage("deploy") {
+      environment {
+        DOCKER_CRED = credentials('docker-hub-repo')
+      }
+      steps {
+        script {
+          echo "waiting to ec2 server to initialize"
+          sleep(time: 90, unit: "SECONDS")
           echo 'deploying docker image to EC2...'
-          
-          def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME}"
+          echo "${EC2_PUBLIC_IP}"
+
+          def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME} ${DOCKER_CRED_USR} ${DOCKER_CRED_PWD}"
           def ec2Instance = "ec2-user@$35.180.151.121"
 
           sshagent(['server-ssh-key']) {
-            sh "scp -o server-cmds.sh ${ec2Instance}:/home/ec2-user"
-            sh "scp -o docker-compose.yaml ${ec2Instance}:/home/ec2-user"
+            sh "scp -o StrictHostKeyChecking=no server-cmds.sh ${ec2Instance}:/home/ec2-user"
+            sh "scp -o StrictHostKeyChecking=no docker-compose.yaml ${ec2Instance}:/home/ec2-user"
             sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
           }
         }
       }
-    }               
+    }
   }
 }
