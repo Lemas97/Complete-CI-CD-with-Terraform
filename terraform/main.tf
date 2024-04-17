@@ -106,6 +106,12 @@ resource "aws_instance" "myapp-server" {
   }
 }
 
-output "ec2_public_ip" {
-  value = aws_instance.myapp-server.public_ip
+resource "null_resource" "configure_server" {
+  triggers = {
+    trigger = aws_instance.myapp-server.public_ip
+  }
+  provisioner "local-exec" {
+    working_dir = "C:/Users/LC/DevopsCourses/Module15/ansible"
+    command = "ansible-playbook --inventory ${aws_instance.myapp-server.public_ip}, --private-key ${var.ssh_key_private} --user ec2-user deploy-docker-new-user.yaml"
+  }
 }

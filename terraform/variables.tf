@@ -23,3 +23,4 @@ variable instance_type {
 variable region {
   default = "eu-central-1"
 }
+variable ssh_key_private {}
